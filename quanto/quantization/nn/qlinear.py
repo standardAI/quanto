@@ -35,7 +35,7 @@ class QLinear(QModuleMixin, torch.nn.Linear):
         if isinstance(self.weight, QTensor):
             return self.weight
         # Quantize the weights per-axis
-        wscale = absmax_scale(self.weight, axis=0)
+        wscale = absmax_scale(self.weight, axis=None)
         return QTensor.quantize(self.weight, itype=self.weights, scale=wscale)
 
     def qforward(self, input: torch.Tensor) -> torch.Tensor:
@@ -44,8 +44,4 @@ class QLinear(QModuleMixin, torch.nn.Linear):
             input = QTensor.quantize(input, self.activations, self.input_scale)
         # We always use quantized weights
         qweight = self.qweight()
-        output = torch.matmul(input, qweight.t())
-        if self.bias is not None:
-            # The outputs will be dequantized in the addition since the biases are not quantized
-            output = output + self.bias
-        return output
+        return torch.nn.functional.linear(input, qweight, bias=self.bias)

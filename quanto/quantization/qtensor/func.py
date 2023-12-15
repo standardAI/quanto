@@ -45,3 +45,23 @@ def unary_unsupported_op(func, t, *args, **kwargs):
 @register_qtensor_func([torch.nn.functional.cross_entropy, torch.nn.functional.cosine_similarity])
 def plurary_unsupported_op(func, *args, **kwargs):
     return func(*dequantize(*args), **kwargs)
+
+
+from torch_int._CUDA import linear_a8_w8_bfp32_ofp32
+
+
+@register_qtensor_func([torch.nn.functional.linear])
+def linear(func, input, other, bias=None):
+    if isinstance(input, QTensor) and input.device.type == 'cuda' and input.itype == torch.int8 and isinstance(other, QTensor) and other.axis is None:
+        input_shape = input.shape
+        output_scale = input._scale * other._scale
+        input = input.view(-1, input_shape[-1])
+        if bias is None:
+            bias = torch.zeros((input_shape[-1]), dtype=other.dtype)
+        bias = bias.to(torch.float32)
+        output = linear_a8_w8_bfp32_ofp32(input._data.contiguous(), other._data.contiguous(), bias, float(output_scale.item()), 1.0)
+        return output.view(*input_shape[:-1], -1).to(input.dtype).contiguous()
+    output = torch.matmul(input, other.t())
+    if bias is not None:
+        output = output + bias
+    return output
